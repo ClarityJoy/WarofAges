@@ -9,8 +9,19 @@ const S={mode:'menu',phase:'setup',paused:false,speed:1,teams:['blue','red'],pla
 
 /* ---------- renderer / scene ---------- */
 const canvas=document.getElementById('c');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+// phones and tablets have far less graphics memory than a computer: draw fewer pixels and smaller shadows there
+const IS_MOBILE=!!((window.matchMedia&&matchMedia('(pointer:coarse)').matches)||/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent||''));
+const renderer=new THREE.WebGLRenderer({canvas,antialias:!IS_MOBILE,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,IS_MOBILE?1.5:2));
+/* if the graphics chip gives up (out of memory on a big map), reload once with shadows off and say why */
+canvas.addEventListener('webglcontextlost',e=>{ e.preventDefault();
+  let again=false; try{ again=sessionStorage.getItem('war_gfx_reload')==='1'; }catch(err){}
+  try{ const s=JSON.parse(localStorage.getItem('war_ages_v2')||'{}'); s.shadows=false; s.lowGfx=true; localStorage.setItem('war_ages_v2',JSON.stringify(s)); }catch(err){}
+  const m=document.createElement('div'); m.style.cssText='position:fixed;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);color:#fff;font:16px sans-serif;text-align:center;padding:20px;direction:rtl';
+  m.textContent=again?'הגרפיקה של המכשיר לא עומדת במפה הזאת. נסה גודל מפה קטן יותר.':'הגרפיקה של המכשיר נעצרה (כנראה המפה גדולה מדי). טוען מחדש בלי צללים…';
+  document.body.appendChild(m);
+  if(!again){ try{ sessionStorage.setItem('war_gfx_reload','1'); }catch(err){} setTimeout(()=>location.reload(),1800); }
+},false);
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.25;
 const scene=new THREE.Scene();
@@ -18,7 +29,7 @@ scene.background=new THREE.Color(0xa9c7dc); scene.fog=new THREE.Fog(0xa9c7dc,170
 const camera=new THREE.PerspectiveCamera(50,1,.5,1200);
 const hemi=new THREE.HemisphereLight(0xdfefff,0x5a5236,.78); scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xfff1d6,.85); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
-Object.assign(sun.shadow.camera,{left:-95,right:95,top:95,bottom:-95,near:10,far:400}); sun.shadow.bias=-.0008; scene.add(sun); scene.add(sun.target);
+Object.assign(sun.shadow.camera,{left:-95,right:95,top:95,bottom:-95,near:10,far:400}); sun.shadow.bias=-.0004; sun.shadow.normalBias=.05; scene.add(sun); scene.add(sun.target);
 const moon=new THREE.DirectionalLight(0x8fa8ff,0); moon.position.set(60,100,-40); scene.add(moon);
 const boomLight=new THREE.PointLight(0xffa050,0,50,2); scene.add(boomLight);
 const stars=(()=>{const n=900,p=new Float32Array(n*3); for(let i=0;i<n;i++){const a=Math.random()*6.283,e=Math.random()*1.4+.08,r=600; p[i*3]=Math.cos(a)*Math.cos(e)*r; p[i*3+1]=Math.sin(e)*r; p[i*3+2]=Math.sin(a)*Math.cos(e)*r;}
@@ -61,8 +72,7 @@ function setMapSize(h){
   NAV.dirty=true;
   HALF=h; const k=h/80;
   ground.scale.set(k,k,1);
-  const sc=sun.shadow.camera; sc.left=-(h+15); sc.right=h+15; sc.top=h+15; sc.bottom=-(h+15); sc.far=400*k+100; sc.updateProjectionMatrix();
-  const ms=h>100?4096:2048; if(sun.shadow.mapSize.x!==ms){ sun.shadow.mapSize.set(ms,ms); if(sun.shadow.map){sun.shadow.map.dispose(); sun.shadow.map=null;} }
+  const ms=IS_MOBILE?1024:2048; if(sun.shadow.mapSize.x!==ms){ sun.shadow.mapSize.set(ms,ms); if(sun.shadow.map){sun.shadow.map.dispose(); sun.shadow.map=null;} }
   scene.fog.near=170*k; scene.fog.far=420*k; camera.far=1200*k+200; camera.updateProjectionMatrix();
   Object.assign(ZONES.blue,{x0:-h+2,x1:-h+30,z0:-h+2,z1:h-2}); Object.assign(ZONES.red,{x0:h-30,x1:h-2,z0:-h+2,z1:h-2});
   Object.assign(ZONES.green,{x0:-h+36,x1:h-36,z0:-h+2,z1:-h+26}); Object.assign(ZONES.yellow,{x0:-h+36,x1:h-36,z0:h-26,z1:h-2});
@@ -92,12 +102,13 @@ function applyTOD(){
   if(curTheme.neon) cSky.lerp(new THREE.Color(0x1a1030),.35);
   scene.background.copy(cSky); scene.fog.color.copy(cSky);
   const k=HALF/80, sx=Math.cos(a)*130*k, sy=Math.max(.08,el)*150*k;
-  sun.position.set(sx,sy,45*k); sun.target.position.set(0,0,0);
+  SUNDIR.set(sx,sy,45*k).normalize(); sun.position.set(sx,sy,45*k); sun.target.position.set(0,0,0); updateShadowCam(true);
   sun.intensity=.9*clamp(el*3,0,1); sun.color.copy(C_SUN).lerp(C_SUNSET,set);
   hemi.intensity=.2+.6*day; moon.intensity=.32*(1-day);
   stars.material.opacity=clamp(1-day*1.6,0,1);
   bSide.emissiveIntensity=(1-day)*.9; skyMat.emissiveIntensity=(1-day)*.8;
   S.night=1-day;
+  if(typeof wxLight==='function') wxLight();
   if(typeof updateSky==='function') updateSky();
 }
 function refreshTerrain(){ if(curMap) buildTerrainMesh(curMap); NAV.dirty=true; }
@@ -234,7 +245,7 @@ function updateChunks(dt){
 /* ---------- sound ---------- */
 let AC=null,NB=null,master=null,muted=false; const lastS={};
 function initAudio(){
-  if(AC){ if(AC.state==='suspended') AC.resume(); return; }
+  if(AC){ if(AC.state==='suspended'&&!document.hidden) AC.resume(); return; }
   try{ AC=new (window.AudioContext||window.webkitAudioContext)(); NB=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);
     const ch=NB.getChannelData(0); for(let i=0;i<ch.length;i++) ch[i]=Math.random()*2-1;
     master=AC.createGain(); master.gain.value=.5*VOL.master*VOL.sfx; const comp=AC.createDynamicsCompressor(); master.connect(comp); comp.connect(AC.destination);
@@ -246,6 +257,16 @@ function initAudio(){
 }
 let revSend=null;
 const VOL={master:1,sfx:1};
+/* sound only while the game is on screen: leaving the tab, minimising the browser or switching away from
+   the app pauses all sound (music, effects, weather), and it comes back when the game is in front again */
+function audioFollowVisibility(){
+  if(!AC) return;
+  if(document.hidden){ if(AC.state==='running') AC.suspend(); }
+  else if(AC.state==='suspended') AC.resume();
+}
+document.addEventListener('visibilitychange',audioFollowVisibility);
+window.addEventListener('pagehide',()=>{ if(AC&&AC.state==='running') AC.suspend(); });
+window.addEventListener('pageshow',audioFollowVisibility);
 function applyVolumes(){ if(master) master.gain.setValueAtTime(.5*VOL.master*VOL.sfx,AC.currentTime); Music.setVol(); }
 const GAP={shot:.03,mg:.03,pistol:.04,musket:.08,snipe:.09,boom:.05,cannon:.08,rocket:.08,flame:.16,place:.05,whistle:.3,hit:.07,heal:.4,laser:.05,arrow:.05,rail:.12,coin:.05,win:1,thud:.1};
 function sfxVol(x,z){ let vol=1; if(x!==undefined){const d=Math.hypot(x-cam.tx,z-cam.tz); vol=Math.max(.05,1-d/(110+cam.r*.6));} vol*=clamp(1.5-cam.r/220,.35,1.2); if(S.mode==='menu') vol*=.35; return vol; }
@@ -335,12 +356,23 @@ function battleCry(){
 
 /* ---------- camera ---------- */
 const cam={tx:0,tz:0,theta:Math.PI*.5,phi:.92,r:120};
+/* Shadows cover only the area around where the camera looks, not the whole map.
+   Covering an 800 m map at once made the shadow too coarse and the ground shadowed itself in a pattern of squares. */
+const SUNDIR=new THREE.Vector3(0,1,0); let shadowHalf=0;
+function updateShadowCam(force){
+  const sc=sun.shadow.camera, half=clamp(cam.r*1.1+25,45,230);
+  if(force||Math.abs(half-shadowHalf)>shadowHalf*.08){ shadowHalf=half; sc.left=-half; sc.right=half; sc.top=half; sc.bottom=-half; sc.near=20; sc.far=1000; sc.updateProjectionMatrix(); }
+  const texel=2*shadowHalf/sun.shadow.mapSize.x, tx=Math.round(cam.tx/texel)*texel, tz=Math.round(cam.tz/texel)*texel;
+  sun.target.position.set(tx,0,tz); sun.position.copy(SUNDIR).multiplyScalar(450).add(sun.target.position);
+  sun.target.updateMatrixWorld();
+}
 let shake=0;
 function updateCam(){
   const s=Math.sin(cam.phi);
   camera.position.set(cam.tx+cam.r*s*Math.sin(cam.theta),cam.r*Math.cos(cam.phi),cam.tz+cam.r*s*Math.cos(cam.theta));
   const gy=gh(cam.tx,cam.tz); camera.position.y+=gy; const cg=gh(camera.position.x,camera.position.z)+4; if(camera.position.y<cg) camera.position.y=cg;
   camera.lookAt(cam.tx,gy,cam.tz);
+  updateShadowCam(false);
   if(shake>.01){camera.position.x+=R(-shake,shake); camera.position.y+=R(-shake,shake); camera.position.z+=R(-shake,shake);}
 }
 function panBy(dx,dy){
@@ -351,6 +383,7 @@ function panBy(dx,dy){
 
 /* ---------- world ---------- */
 let units=[], corpses=[], obstacles=[], projs=[], pending=[];
+let NETC=false, NETREPLAY=false;   // NETC: this screen only shows a battle the host computes
 const V1=new THREE.Vector3();
 function addObstacle(type,x,z,rq,w,d){
   const def=OBS[type]; if(!def) return null; x=clamp(x,-HALF+.5,HALF-.5); z=clamp(z,-HALF+.5,HALF-.5);
@@ -367,6 +400,7 @@ const TREES={tree:1,pine:1,snowpine:1,palm:1,cactus:1};
 let fallers=[];
 function destroyObs(o){
   if(o.dead) return; o.dead=true; NAV.dirty=true;
+  if(Net.isHost()) Net.fx(['o',obstacles.indexOf(o),o.hitA!=null?+o.hitA.toFixed(2):0]);
   if(TREES[o.type]){ // trees break at the trunk and fall over
     const a=o.hitA!=null?o.hitA:Math.random()*6.283; fallers.push({m:o.mesh,ax:Math.cos(a),az:-Math.sin(a),ang:0,v:0,t:0});
     spawnChunks(o.x,o.y,o.z,.3,.3,1.5,0x5a3d22,4); sfx('hit',o.x,o.z); return;
@@ -378,7 +412,7 @@ function destroyObs(o){
   if(o.def.explode) pending.push({t:R(.08,.22),fn:()=>explosion(o.x,o.y+.7,o.z,6.5,130,null,null,'blast')});
 }
 function hurtObs(o,amt,fx,fz){
-  if(o.dead||o.def.hp>1e8) return; o.hp-=amt;
+  if(o.dead||o.def.hp>1e8||NETC) return; o.hp-=amt;
   if(fx!=null) o.hitA=Math.atan2(o.z-fz,o.x-fx);
   if(o.hp<=0){ destroyObs(o); return; }
   // damage stages: big things lose their top and shed debris
@@ -438,7 +472,7 @@ function addUnit(type,team,x,z,rot){
   units.push(u); return u;
 }
 function defaultRot(team){return team==='blue'?Math.PI/2:team==='red'?-Math.PI/2:team==='green'?0:Math.PI;}
-function removeUnit(u){ scene.remove(u.g); scene.remove(u.bar); u.fg.material.dispose(); u.removed=true; }
+function removeUnit(u){ if(Net.isHost()&&u.nid&&S.mode==='net') Net.fx(['d',u.nid]); scene.remove(u.g); scene.remove(u.bar); u.fg.material.dispose(); u.removed=true; }
 function clearUnits(){
   for(const u of units) removeUnit(u); for(const u of corpses) removeUnit(u); units=[]; corpses=[];
   for(const p of projs) scene.remove(p.mesh); projs=[]; pending=[]; tracers=[];
@@ -458,7 +492,7 @@ function armorMul(d,kind){
   return .85;
 }
 function hurt(u,amt,src,kind){
-  if(!u.alive) return; const d=u.def; u.lastKind=kind;
+  if(!u.alive||NETC) return; const d=u.def; u.lastKind=kind;
   if(d.shield&&src&&(LIGHT[kind]||kind==='laser')){
     const fx=Math.sin(u.rot),fz=Math.cos(u.rot),dx=src.x-u.x,dz=src.z-u.z,l=Math.hypot(dx,dz)||1;
     if((fx*dx+fz*dz)/l>.35){amt*=1-d.shield; if(Math.random()<.3) ADD.emit(u.x+fx*.6,u.y+1.1,u.z+fz*.6,R(-2,2),R(1,3),R(-2,2),.15,.25,.1,.6,.9,1,1,10,0);}
@@ -560,6 +594,8 @@ function promote(u){
 function charUnit(u){ u.g.traverse(m=>{if(m.isMesh&&m.material!==barBg) m.material=CHAR;}); }
 
 function explosion(x,y,z,r,dmg,team,src,kind,col){
+  if(NETC&&!NETREPLAY) return;
+  if(Net.isHost()) Net.fx(['b',+x.toFixed(1),+y.toFixed(1),+z.toFixed(1),+r.toFixed(1),col==='plasma'?1:0]);
   { const g0=gh(x,z)+.3; if(y<g0) y=g0; }
   for(const u of units){
     if(!u.alive) continue; if(team&&u.team===team&&!S.ff) continue;
@@ -674,9 +710,9 @@ function findWaypoint(u,t){
 /* ---------- attacks ---------- */
 const NEEDLOS={bullet:1,laser:1,rail:1,rocket:1,shell:1,plasma:1,flame:1};
 function tipPos(u){ const t=u.tips[u.tipI%u.tips.length]; u.tipI++; t.getWorldPosition(V1); return V1; }
-function accBonus(u){ const b=S.bots[u.team]; return b?DIFF[b.diff].acc:0; }
+function accBonus(u){ const b=S.bots[u.team]; return (b?DIFF[b.diff].acc:0)+(S.phase==='battle'?WX.acc:0); }
 function act(u,t,dist){
-  const d=u.def; u.anim=1;
+  const d=u.def; u.anim=1; u.atkF=1;
   switch(d.atk){
     case 'bullet': case 'laser': shootHitscan(u,t,dist); break;
     case 'rail': shootRail(u,t); break;
@@ -725,6 +761,7 @@ function shootHitscan(u,t,dist){
   } else { ex=t.x+R(-2.2,2.2); ey=Math.max(0,ay+R(-1.2,1.2)); ez=t.z+R(-2.2,2.2); strayHit(ex,ez,d.dmg*.8,d.atk); }
   noise(u.x,u.z,24);
   const hitOK=Math.hypot(ex-t.x,ez-t.z)<.6; shotFx(u,p,ex,ey,ez,hitOK,t,las);
+  if(Net.isHost()&&u.nid) Net.shot(u,ex,ey,ez);
   if(las){ const c=TEAMS[u.team]; const r=((c.bar>>16)&255)/255,g=((c.bar>>8)&255)/255,b=(c.bar&255)/255;
     tracer(p.x,p.y,p.z,ex,ey,ez,.5+r*.5,.5+g*.5,.5+b*.5,.14,true); muzzle(p.x,p.y,p.z,.8,.5+r*.5,.5+g*.5,.5+b*.5); sfx('laser',u.x,u.z); return; }
   const sn=d.dmg>=50;
@@ -748,7 +785,7 @@ const PGEO={rocket:new THREE.BoxGeometry(.18,.18,.8),shell:new THREE.SphereGeome
   boulder:new THREE.DodecahedronGeometry(.5,0),cannonball:new THREE.SphereGeometry(.24,8,6),arrow:new THREE.BoxGeometry(.05,.05,.9),stone:new THREE.SphereGeometry(.12,5,4),bomb:new THREE.BoxGeometry(.35,.35,.8),ionball:new THREE.SphereGeometry(.45,10,8),fireball:new THREE.SphereGeometry(.6,10,8)};
 const PMAT={rocket:M(0x3a3a2a),shell:new THREE.MeshBasicMaterial({color:0xffe9a0}),plasma:new THREE.MeshBasicMaterial({color:0xd27cff}),grenade:M(0x2b3320),mortar:M(0x22261c),
   boulder:M(0x7d7b76),cannonball:M(0x1a1a1a),arrow:M(0x6b4a2e),stone:M(0x888888),bomb:M(0x2a2a2a),ionball:new THREE.MeshBasicMaterial({color:0x8ae8ff}),fireball:new THREE.MeshBasicMaterial({color:0xff8a2a})};
-function spawnProj(p){ p.mesh=new THREE.Mesh(PGEO[p.kind],PMAT[p.kind]); p.mesh.position.set(p.x,p.y,p.z); scene.add(p.mesh); projs.push(p); }
+function spawnProj(p){ if(Net.isHost()) Net.fx(['p',p.kind,+p.x.toFixed(1),+p.y.toFixed(1),+p.z.toFixed(1),+p.vx.toFixed(1),+p.vy.toFixed(1),+p.vz.toFixed(1),p.g,+p.life.toFixed(2)]); p.mesh=new THREE.Mesh(PGEO[p.kind],PMAT[p.kind]); p.mesh.position.set(p.x,p.y,p.z); scene.add(p.mesh); projs.push(p); }
 function fireProj(u,t,kind){
   const d=u.def, p=tipPos(u);
   let dx=t.x-p.x, dy=aimY(t)-p.y, dz=t.z-p.z; const L=Math.hypot(dx,dy,dz)||1, sp=kind==='shell'?95:kind==='plasma'?60:kind==='fireball'?35:42, s=.035*(1-accBonus(u)*3);
@@ -798,6 +835,7 @@ function flameTick(u){
 function updateProjs(dt){
   for(const p of projs){
     if(p.done) continue;
+    if(p.g>0&&WX.windK>.3){ p.vx+=WX.wx*dt*3.5; p.vz+=WX.wz*dt*3.5; }
     p.vy-=p.g*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt; p.life-=dt;
     p.mesh.position.set(p.x,p.y,p.z); V1.set(p.x+p.vx,p.y+p.vy,p.z+p.vz); p.mesh.lookAt(V1);
     if(p.kind==='rocket'){ SMK.emit(p.x,p.y,p.z,R(-.3,.3),R(0,.5),R(-.3,.3),R(.9,1.6),.4,1.6,.85,.83,.8,.6,-.3,1); ADD.emit(p.x,p.y,p.z,-p.vx*.05,-p.vy*.05,-p.vz*.05,.1,.9,.2,1,.6,.2,1,0,0); ADD.emit(p.x,p.y,p.z,R(-1,1),R(-1,1),R(-1,1),.25,.15,.05,1,.7,.3,1,6,0); }
@@ -813,6 +851,7 @@ function updateProjs(dt){
     }
     if(hit){
       p.done=true; scene.remove(p.mesh);
+      if(p.visual){ if(p.direct) SMK.emit(p.x,Math.max(.2,p.y),p.z,0,1,0,.4,.2,.6,.6,.55,.45,.6,0,1); continue; }
       if(p.direct){ if(direct) hurt(direct,p.dmg*R(.85,1.15),p.src,p.kind); else if(!strayHit(p.x,p.z,p.dmg,p.kind)) SMK.emit(p.x,.2,p.z,0,1,0,.4,.2,.6,.6,.55,.45,.6,0,1); continue; }
       if(direct) hurt(direct,p.dmg*.5,p.src,p.kind);
       explosion(p.x,Math.max(.3,p.y),p.z,p.splash,p.dmg,p.team,p.src,p.kind,(p.kind==='plasma'||p.kind==='ionball')?'plasma':null);
@@ -826,6 +865,7 @@ function updateProjs(dt){
 /* ---------- unit update ---------- */
 function updateUnit(u,dt,battle){
   const d=u.def;
+  if(NETC){ const f=netDrive(u,dt); animUnit(u,dt,f,false,false); return; }
   if(u.downed>0){ updateDowned(u,dt); return; }
   if(u.burn>0){ u.burn-=dt; hurt(u,7*dt,u.burnSrc,'fire'); if(Math.random()<dt*25) ADD.emit(u.x+R(-.3,.3),u.y+R(.5,1.8),u.z+R(-.3,.3),0,R(1,2.5),0,.4,.5,.1,1,.5,.1,.9,-1,0); if(!u.alive) return; }
   u.cd-=dt;
@@ -842,7 +882,7 @@ function updateUnit(u,dt,battle){
     if(t&&(!t.alive||(d.atk==='heal'&&t.hp>=t.mhp&&!(t.downed>0))||(d.atk!=='heal'&&t.downed>0))){ u.target=null; u.rt=0; }
     else if(t){
       const dx=t.x-u.x, dz=t.z-u.z, dist=Math.hypot(dx,dz)||.001, nx=dx/dist, nz=dz/dist;
-      const dy=t.y-u.y, rd=d.atk==='bomb'?dist:Math.sqrt(dist*dist+dy*dy), reach=d.rng+t.rad;
+      const dy=t.y-u.y, rd=d.atk==='bomb'?dist:Math.sqrt(dist*dist+dy*dy), reach=(d.rng>4?Math.max(4,d.rng*WX.rng):d.rng)+t.rad;
       face=Math.atan2(nx,nz);
       let see=true;
       if(NEEDLOS[d.atk]&&!d.fly&&!t.def.fly){ u.losT-=dt; if(u.losT<=0||u.losFor!==t){u.losOk=los(u.x,u.z,t.x,t.z,aimY(u)+.3,aimY(t)); u.losT=.2+Math.random()*.1; u.losFor=t;} see=u.losOk; }
@@ -866,13 +906,17 @@ function updateUnit(u,dt,battle){
   if(mvx||mvz){
     if(u.detour>0&&!d.circle&&!(u.blocked||u.stuckN>1)){ u.detour-=dt; const px=-mvz*u.dsign, pz=mvx*u.dsign; mvx=mvx*.25+px; mvz=mvz*.25+pz; const l=Math.hypot(mvx,mvz); mvx/=l; mvz/=l; }
     let slopeF=1; if(!d.fly){ const ahead=gh(u.x+mvx*1.5,u.z+mvz*1.5)-gh(u.x,u.z); slopeF=clamp(1-ahead/1.5*.9,.4,1.25); }
-    const sp=d.spd*dt*(u.slow||1)*slopeF*(u.holdBack?.45:1), ox=u.x, oz=u.z;
+    const sp=d.spd*dt*(u.slow||1)*slopeF*(u.holdBack?.45:1)*(battle&&!d.fly?WX.spd:1), ox=u.x, oz=u.z;
     u.x+=mvx*sp; u.z+=mvz*sp; if(!d.fly) pushOut(u); else {u.x=clamp(u.x,-HALF+1,HALF-1); u.z=clamp(u.z,-HALF+1,HALF-1);}
     const moved=Math.hypot(u.x-ox,u.z-oz); u.run+=moved;
     if(moved<sp*.35){ u.stuck+=dt; if(u.stuck>.45){ u.stuck=0; u.stuckN=(u.stuckN||0)+1; if(u.detour<=0) u.dsign=Math.random()<.5?1:-1; u.detour=2.2; } }
     else { u.stuck=Math.max(0,u.stuck-dt); if(moved>sp*.8&&u.stuckN) u.stuckN=Math.max(0,u.stuckN-dt*.5); }
     u.moving=true; u.mvAng=Math.atan2(mvx,mvz);
   } else { u.moving=false; if(!inRange) u.run=0; }
+  animUnit(u,dt,face,inRange,battle);
+}
+function animUnit(u,dt,face,inRange,battle){
+  const d=u.def;
   // facing & animation
   const veh=isVehDef(d)&&d.model!=='mech';
   if(u.turret){
@@ -1033,16 +1077,16 @@ function step(dt){
   for(const p of pending) p.t-=dt;
   const due=pending.filter(p=>p.t<=0); pending=pending.filter(p=>p.t>0); for(const p of due) p.fn();
   for(const u of units){ if(u.alive) updateUnit(u,dt,battle); else updateDead(u,dt); }
-  separation();
+  if(!NETC) separation();
   updateProjs(dt);
   ADD.update(dt); SMK.update(dt); updateTracers(dt); updateChunks(dt); updateFallers(dt); updateFX(dt); updateCritters(dt);
   for(const f of flashes){f.t+=dt; const k=f.t/f.max; f.m.scale.setScalar(f.r*(.3+.8*k)); f.m.material.opacity=Math.max(0,1-k);}
   flashes=flashes.filter(f=>{if(f.t>=f.max){scene.remove(f.m); f.m.material.dispose(); return false;} return true;});
   boomLight.intensity*=Math.pow(.02,dt);
-  navTick(dt);
-  commandTick(dt);
+  if(!NETC){ navTick(dt); commandTick(dt); }
+  wxStep(dt);
   if(units.some(u=>u.removed||u.movedOut)) units=units.filter(u=>!u.removed&&!u.movedOut);
-  if(battle){
+  if(battle&&!NETC){
     if(S.income>0){ S.incomeT+=dt; if(S.incomeT>=10){ S.incomeT=0; for(const t of S.teams) S.money[t]=(S.money[t]||0)+S.income; } }
     botsThink(dt);
   }

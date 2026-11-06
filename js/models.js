@@ -15,8 +15,59 @@ function cylZ(r,h,c,p,x,y,z,s){const m=cylY(r,h,c,p,x,y,z,s); m.rotation.x=Math.
 function cylX(r,h,c,p,x,y,z,s){const m=cylY(r,h,c,p,x,y,z,s||14); m.rotation.z=Math.PI/2; return m;}
 function grp(p,x,y,z){const g=new THREE.Group(); g.position.set(x||0,y||0,z||0); if(p)p.add(g); return g;}
 
+/* ---------- patterned skins: each pattern is drawn once on a small canvas and reused ---------- */
+const skinTexC={}, skinMatC={};
+const hexs=c=>'#'+c.toString(16).padStart(6,'0');
+function skinCanvas(sk){
+  if(skinTexC[sk.id]) return skinTexC[sk.id];
+  const N=64, cv=document.createElement('canvas'); cv.width=cv.height=N; const x=cv.getContext('2d'), C=sk.cols.map(hexs);
+  let em=null;   // a second canvas for parts that glow in the dark
+  const rnd=(()=>{ let a=0; for(const ch of sk.id) a=(a*31+ch.charCodeAt(0))>>>0; return ()=>{ a=(a*1664525+1013904223)>>>0; return a/4294967296; }; })();
+  const blob=(c,n,r0,r1)=>{ x.fillStyle=c; for(let i=0;i<n;i++){ const px=rnd()*N, py=rnd()*N, r=r0+rnd()*(r1-r0); x.beginPath(); for(let k=0;k<7;k++){ const a=k/7*6.283, rr=r*(.6+rnd()*.6); x.lineTo(px+Math.cos(a)*rr,py+Math.sin(a)*rr); } x.fill(); } };
+  const emc=()=>{ em=document.createElement('canvas'); em.width=em.height=N; const e=em.getContext('2d'); e.fillStyle='#000'; e.fillRect(0,0,N,N); return e; };
+  switch(sk.fx){
+    case 'camo': x.fillStyle=C[0]; x.fillRect(0,0,N,N); blob(C[1],9,6,12); blob(C[2],7,5,10); blob(C[3],6,3,7); break;
+    case 'pixcamo': x.fillStyle=C[0]; x.fillRect(0,0,N,N); for(let i=0;i<220;i++){ x.fillStyle=C[1+Math.floor(rnd()*3)]; const s=4*(1+Math.floor(rnd()*2)); x.fillRect(Math.floor(rnd()*16)*4,Math.floor(rnd()*16)*4,s,s); } break;
+    case 'grad': { const g=x.createLinearGradient(0,0,0,N); C.forEach((c,i)=>g.addColorStop(i/(C.length-1),c)); x.fillStyle=g; x.fillRect(0,0,N,N); break; }
+    case 'stripes': { const w=C.length>2?N/C.length:8; for(let i=0;i*w<N*2;i++){ x.fillStyle=C[i%C.length]; x.save(); x.translate(0,0); x.beginPath(); x.moveTo(i*w-N,0); x.lineTo(i*w-N+w,0); x.lineTo(i*w+w,N); x.lineTo(i*w,N); x.fill(); x.restore(); } break; }
+    case 'tiger': x.fillStyle=C[0]; x.fillRect(0,0,N,N); x.fillStyle=C[1]; for(let i=0;i<7;i++){ const y=i*9+rnd()*4; x.beginPath(); x.moveTo(0,y); x.quadraticCurveTo(N*.3,y+6*(rnd()-.5),N*.55,y+2); x.lineTo(N*.55,y+3.5); x.quadraticCurveTo(N*.3,y+5,0,y+4); x.fill(); x.beginPath(); x.moveTo(N,y+4); x.quadraticCurveTo(N*.7,y+3,N*.45,y+5); x.lineTo(N*.45,y+6.5); x.quadraticCurveTo(N*.7,y+8,N,y+8); x.fill(); } break;
+    case 'spots': x.fillStyle=C[0]; x.fillRect(0,0,N,N); for(let i=0;i<26;i++){ const px=rnd()*N, py=rnd()*N, r=2+rnd()*2.5; x.fillStyle=C[1]; x.beginPath(); x.arc(px,py,r+1.3,0,6.283); x.fill(); x.fillStyle=C[2]; x.beginPath(); x.arc(px,py,r*.6,0,6.283); x.fill(); } break;
+    case 'carbon': for(let j=0;j<N;j+=4) for(let i=0;i<N;i+=4){ x.fillStyle=((i+j)/4)%2?C[0]:C[1]; x.fillRect(i,j,4,4); x.fillStyle='rgba(255,255,255,.06)'; x.fillRect(i,j,4,1); } break;
+    case 'marble': x.fillStyle=C[0]; x.fillRect(0,0,N,N); x.strokeStyle=C[1]; for(let i=0;i<6;i++){ x.lineWidth=.4+rnd()*1.2; x.globalAlpha=.35+rnd()*.4; x.beginPath(); let px=rnd()*N, py=0; x.moveTo(px,py); while(py<N){ px+=(rnd()-.5)*10; py+=4+rnd()*6; x.lineTo(px,py); } x.stroke(); } x.globalAlpha=1; break;
+    case 'checker': for(let j=0;j<4;j++) for(let i=0;i<4;i++){ x.fillStyle=C[(i+j*2)%C.length]; x.fillRect(i*16,j*16,16,16); } break;
+    case 'toxic': { x.fillStyle=C[0]; x.fillRect(0,0,N,N); const e=emc(); for(let i=0;i<16;i++){ const px=rnd()*N, py=rnd()*N, r=1.5+rnd()*4; for(const g of [x,e]){ g.fillStyle=C[1]; g.beginPath(); g.arc(px,py,r,0,6.283); g.fill(); } } break; }
+    case 'lava': { x.fillStyle=C[0]; x.fillRect(0,0,N,N); const e=emc(); for(const g of [x,e]){ g.strokeStyle=C[1]; g.lineCap='round'; } for(let i=0;i<9;i++){ let px=rnd()*N, py=rnd()*N; const w=.8+rnd()*1.8; for(const g of [x,e]){ g.lineWidth=w; g.beginPath(); g.moveTo(px,py); } for(let k=0;k<5;k++){ px+=(rnd()-.5)*18; py+=(rnd()-.5)*18; x.lineTo(px,py); e.lineTo(px,py); } x.stroke(); e.stroke(); } break; }
+    case 'shadow': { x.fillStyle=C[0]; x.fillRect(0,0,N,N); const e=emc(); for(const g of [x,e]){ g.strokeStyle=C[1]; g.lineWidth=1; } for(let i=0;i<5;i++){ const y=8+i*12+rnd()*4; for(const g of [x,e]){ g.beginPath(); g.moveTo(0,y); g.lineTo(N*.3,y+3); g.lineTo(N*.6,y-2); g.lineTo(N,y+1); g.stroke(); } } break; }
+    case 'galaxy': { const g=x.createRadialGradient(N*.4,N*.4,4,N*.5,N*.5,N*.7); g.addColorStop(0,C[1]); g.addColorStop(1,C[0]); x.fillStyle=g; x.fillRect(0,0,N,N); const e=emc(); for(let i=0;i<40;i++){ const px=rnd()*N, py=rnd()*N, s=rnd()<.15?1.6:.8; for(const c of [x,e]){ c.fillStyle=rnd()<.3?'#9fd8ff':'#ffffff'; c.fillRect(px,py,s,s); } } break; }
+    case 'scales': x.fillStyle=C[1]; x.fillRect(0,0,N,N); for(let j=0;j<9;j++) for(let i=0;i<9;i++){ const px=i*8+(j%2)*4, py=j*8; const g=x.createRadialGradient(px,py+2,1,px,py+3,6); g.addColorStop(0,'#d24a3a'); g.addColorStop(1,C[0]); x.fillStyle=g; x.beginPath(); x.arc(px,py+3,4.6,0,3.1416); x.fill(); } break;
+    case 'circuit': { x.fillStyle=C[0]; x.fillRect(0,0,N,N); const e=emc(); for(const g of [x,e]){ g.strokeStyle=C[1]; g.fillStyle=C[1]; g.lineWidth=1; } for(let i=0;i<10;i++){ let px=Math.floor(rnd()*8)*8, py=Math.floor(rnd()*8)*8; for(const g of [x,e]){ g.beginPath(); g.moveTo(px,py); } for(let k=0;k<3;k++){ if(rnd()<.5) px+=8*(rnd()<.5?-1:1); else py+=8*(rnd()<.5?-1:1); x.lineTo(px,py); e.lineTo(px,py); } x.stroke(); e.stroke(); for(const g of [x,e]) g.fillRect(px-1.5,py-1.5,3,3); } break; }
+    default: x.fillStyle=C[0]; x.fillRect(0,0,N,N);
+  }
+  return skinTexC[sk.id]={cv,em};
+}
+function skinMat(sk,part){
+  const k=sk.id+part; if(skinMatC[k]) return skinMatC[k];
+  const base=sk.cols[0]; let m;
+  if(sk.fx==='metal') m=new THREE.MeshPhongMaterial({color:base,specular:0x8a8a8a,shininess:part==='veh'?45:35,emissive:base,emissiveIntensity:.05});
+  else if(sk.fx==='crystal') m=new THREE.MeshPhongMaterial({color:base,specular:0xffffff,shininess:110,transparent:true,opacity:.78,emissive:base,emissiveIntensity:.45});
+  else if(sk.fx==='ghost') m=new THREE.MeshLambertMaterial({color:base,transparent:true,opacity:.45,emissive:0x9fc6ff,emissiveIntensity:.35,depthWrite:false});
+  else { const {cv,em}=skinCanvas(sk), t=new THREE.CanvasTexture(cv); t.magFilter=THREE.NearestFilter; if(part==='veh'){ t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(2,2); }
+    const o={map:t}; if(em){ const e=new THREE.CanvasTexture(em); e.magFilter=THREE.NearestFilter; if(part==='veh'){ e.wrapS=e.wrapT=THREE.RepeatWrapping; e.repeat.set(2,2); } o.emissive=0xffffff; o.emissiveMap=e; o.emissiveIntensity=1; }
+    m=new THREE.MeshLambertMaterial(o); }
+  return skinMatC[k]=m;
+}
+// a CSS background that previews a skin in the menu
+function skinPreviewCSS(sk,part){
+  const hx=hexs;
+  if(!sk.fx){ const c=part==='veh'?(sk.veh!=null?sk.veh:TEAMS.blue.veh):(sk.uni!=null?sk.uni:TEAMS.blue.main); return hx(c)+(sk.glow?';box-shadow:0 0 12px '+hx(c)+' inset':''); }
+  if(sk.fx==='metal') return `linear-gradient(135deg,${hx(sk.cols[0])},#ffffff 45%,${hx(sk.cols[0])} 60%,#333)`;
+  if(sk.fx==='crystal') return `linear-gradient(135deg,${hx(sk.cols[0])}cc,#ffffffdd 40%,${hx(sk.cols[0])}99 70%,#ffffff)`;
+  if(sk.fx==='ghost') return `radial-gradient(circle,#ffffffaa,${hx(sk.cols[0])}55)`;
+  return `url(${skinCanvas(sk).cv.toDataURL()}) center/${part==='veh'?'50%':'100%'}`;
+}
 function teamColors(team,skinId){
   const T=TEAMS[team], sk=SKINS.find(s=>s.id===skinId)||SKINS[0];
+  if(sk.fx) return {main:T.main,dark:T.dark,uni:skinMat(sk,'uni'),veh:skinMat(sk,'veh'),glow:false};
   const uni=sk.uni!=null?(sk.glow?MG(sk.uni):sk.uni):T.main;
   const veh=sk.veh!=null?(sk.glow?MG(sk.veh):sk.veh):T.veh;
   return {main:T.main,dark:T.dark,uni,veh,glow:!!sk.glow};

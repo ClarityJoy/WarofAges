@@ -19,7 +19,10 @@ function registerCustom(c){
 }
 save.customs.forEach(c=>{try{registerCustom(c);}catch(e){}});
 
-const ui={tab:'all',tool:{kind:'unit',id:'caveman'},brush:1,team:'blue',rotQ:0,inspected:null,skMap:0,sbMap:10,skBots:1,sbTeams:2,snapshot:null,sideOpen:true,bannerClosed:false,demoT:0,bars:'all'};
+function setMob(){ const small=window.matchMedia&&matchMedia('(max-height:520px), (max-width:640px)').matches;
+  document.body.classList.toggle('mob',!!(IS_MOBILE||small)); document.body.classList.toggle('port',innerHeight>innerWidth); }
+setMob(); window.addEventListener('resize',setMob);
+const ui={tab:'all',tool:{kind:'unit',id:'caveman'},brush:1,team:'blue',rotQ:0,inspected:null,skMap:0,sbMap:10,skBots:1,sbTeams:2,snapshot:null,sideOpen:!document.body.classList.contains('mob'),bannerClosed:false,demoT:0,bars:'all'};
 let toastT=0;
 function toast(s,t){const e=$('#toast'); e.innerHTML=s; e.style.opacity=1; toastT=t||2.6;}
 
@@ -35,7 +38,7 @@ function loadWorld(mapId,tod,half,life){
   buildTerrainMesh(map);
   for(const e of list) addObstacle(...e);
   S.hurtCiv=0; S.events=[]; CMD.team={}; CMD.had={}; if(life!==false) spawnLife(map.theme);
-  S.tod=tod; S.todSpeed=0; applyTOD();
+  S.tod=tod; S.todSpeed=0; setWeather('clear');
   S.phase='setup'; S.paused=false; S.t=0; S.incomeT=0; S.placed={}; S.bots={}; S.money={}; S.income=0; S.winner=null; S.tutorial=null; S.revives=0;
   ui.inspected=null; ui.bannerClosed=false; ui.snapshot=null;
   $('#end').classList.add('hide'); $('#banner').classList.add('hide'); $('#info').classList.add('hide'); $('#tut').classList.add('hide');
@@ -51,7 +54,7 @@ const eraIc=d=>d.boss?'👑':d.custom?'🛠️':ERAS[d.era].ic;
 
 /* ---------- campaign ---------- */
 function startCampaign(L){
-  const info=levelInfo(L); S.mode='campaign'; Music.setEra(info.era); loadWorld(info.mapId,info.tod,info.half);
+  const info=levelInfo(L); S.mode='campaign'; Music.setEra(info.era); loadWorld(info.mapId,info.tod,info.half); setWeather(L<=3?'clear':wxRandomFor(curTheme,L));
   S.level=info; S.teams=['blue','red']; S.player='blue'; setSkins(save.skin);
   let wallet=save.money; const minF=Math.round(info.enemyBudget*.85/10)*10; info.topped=0;
   if(wallet<minF){info.topped=minF-wallet; wallet=minF;}
@@ -69,10 +72,10 @@ function startCampaign(L){
 /* ---------- skirmish ---------- */
 function skirmCfg(){
   return {map:ui.skMap,half:MAP_SIZES[$('#skSize').value],bots:ui.skBots,life:$('#skLife').checked,diffs:$$('#skDiffs select').map(s=>s.value),budget:+$('#skBudget').value,
-    eras:$$('#skEras input').filter(i=>i.checked).map(i=>+i.value),boss:$('#skBoss').checked,income:0,tod:+$('#skTod').value,cycle:$('#skCycle').checked};
+    eras:$$('#skEras input').filter(i=>i.checked).map(i=>+i.value),boss:$('#skBoss').checked,income:0,tod:+$('#skTod').value,cycle:$('#skCycle').checked,wx:$('#skWx').value};
 }
 function startSkirmish(cfg){
-  S.mode='skirm'; loadWorld(cfg.map,cfg.tod,cfg.half,cfg.life); S.cfg=cfg; Music.setEra(Math.max(...(cfg.eras.length?cfg.eras:[3])));
+  S.mode='skirm'; loadWorld(cfg.map,cfg.tod,cfg.half,cfg.life); S.cfg=cfg; setWeather(cfg.wx||'clear'); Music.setEra(Math.max(...(cfg.eras.length?cfg.eras:[3])));
   S.teams=TEAM_IDS.slice(0,1+cfg.bots); S.player='blue'; setSkins(save.skin);
   if(!cfg.eras.length) cfg.eras=[0,1,2,3,4,5];
   S.pool=nonCustom().filter(d=>cfg.eras.includes(d.era)&&(!d.boss||cfg.boss));
@@ -83,7 +86,7 @@ function startSkirmish(cfg){
 }
 /* ---------- sandbox ---------- */
 function startSandbox(){
-  S.mode='sandbox'; loadWorld(ui.sbMap,+$('#sbTod').value,MAP_SIZES[$('#sbSize').value],$('#sbLife').checked);
+  S.mode='sandbox'; loadWorld(ui.sbMap,+$('#sbTod').value,MAP_SIZES[$('#sbSize').value],$('#sbLife').checked); setWeather($('#sbWx').value);
   S.teams=TEAM_IDS.slice(0,ui.sbTeams); S.player=null; setSkins(); ui.team='blue';
   S.pool=Object.values(DEFS);
   showZones(S.teams); camTo('blue'); cam.tx=0; cam.tz=0; cam.r=125*Math.max(1,HALF/100); enterHUD();
@@ -114,7 +117,7 @@ $('#tutSkip').onclick=()=>{S.tutorial=null; showTut();};
 /* ---------- menu demo battle ---------- */
 function startDemo(){
   S.mode='menu'; const m=Math.floor(Math.random()*MAPS.length); loadWorld(m,[8,12.5,12.5,18.2,22][Math.floor(Math.random()*5)],80);
-  const era=Math.floor(Math.random()*6); Music.setEra(era); S.teams=['blue','red']; S.player=null; setSkins();
+  const era=Math.floor(Math.random()*6); Music.setEra(era); S.teams=['blue','red']; S.player=null; setSkins(); setWeather(Math.random()<.45?'clear':wxRandomFor(curTheme));
   const pool=nonCustom().filter(d=>!d.boss&&d.era===era);
   for(const t of S.teams){ S.bots[t]={diff:'normal',pool}; S.money[t]=botDeploy(t,1400+era*600,'normal',pool); }
   S.phase='battle'; showZones([]); cam.tx=0; cam.tz=0; cam.r=95; cam.phi=1.0; ui.demoT=0; S.speed=1;
@@ -132,12 +135,17 @@ function showMenu(id){
   if(id==='mLang') buildLangs();
   Music.play('menu');
 }
-function goMenu(){ S.tutorial=null; $('#end').classList.add('hide'); $('#modal').classList.add('hide'); startDemo(); showMenu('mMain'); }
+function goMenu(){ if(S.mode==='net'||Net.role) netLeave(); S.tutorial=null; $('#end').classList.add('hide'); $('#modal').classList.add('hide'); startDemo(); showMenu('mMain'); }
 const mapLabel=i=>`${MAPS[i].theme.ic} #${i+1} ${themeN(MAPS[i].theme)} – ${mapName(MAPS[i])} ▾`;
 $$('.mbtn[data-go]').forEach(b=>b.onclick=()=>{initAudio(); Music.play('menu'); const g=b.dataset.go;
-  if(g==='campaign') showMenu('mCampaign'); else if(g==='skirm') showMenu('mSkirm'); else if(g==='sandbox') showMenu('mSandbox');
+  if(g==='multi') showMenu('mMulti'); else if(g==='campaign') showMenu('mCampaign'); else if(g==='skirm') showMenu('mSkirm'); else if(g==='sandbox') showMenu('mSandbox');
   else if(g==='tutorial') startTutorial(); else if(g==='skins') showMenu('mSkins'); else if(g==='lang') showMenu('mLang'); else showMenu('mSettings');});
-$$('[data-back]').forEach(b=>b.onclick=()=>showMenu('mMain'));
+$$('[data-back]').forEach(b=>b.onclick=()=>{ if(Net.searching) mpCancel(); showMenu('mMain'); });
+ui.mpMode='1v1';
+$$('#mpMode button').forEach(b=>b.onclick=()=>{ if(Net.searching) return; ui.mpMode=b.dataset.m; $$('#mpMode button').forEach(x=>x.classList.toggle('on',x===b)); });
+$('#mpSearch').onclick=()=>{ initAudio(); mpSearch(ui.mpMode); };
+$('#mpCancel').onclick=mpCancel;
+$('#mpBots').onclick=()=>mpLobbyCheck(true);
 function buildLangs(){
   $('#langList').innerHTML=LANGS.map(l=>`<button class="mbtn" data-l="${l.id}" style="${l.id===LANG?'border-color:#ffc94a':''}"><span class="i">${l.flag}</span><span>${l.n}</span></button>`).join('');
   $$('#langList .mbtn').forEach(b=>b.onclick=()=>{ save.lang=b.dataset.l; writeSave(); setLanguage(save.lang); showMenu('mMain'); });
@@ -158,7 +166,7 @@ function buildCampaign(){
     h+='</div>';
   }
   $('#campLv').innerHTML=h;
-  $$('#campLv .lv').forEach(b=>b.onclick=()=>{ if(!b.disabled) startCampaign(+b.dataset.l); });
+  $$('#campLv .lv').forEach(b=>b.onclick=()=>{ if(!b.disabled){ const L=+b.dataset.l; withLoading(()=>startCampaign(L)); } });
 }
 function buildSkDiffs(){
   const old=$$('#skDiffs select').map(s=>s.value);
@@ -172,13 +180,15 @@ $$('#skBots button').forEach(b=>b.onclick=()=>{ui.skBots=+b.dataset.n; $$('#skBo
 $$('#sbTeams button').forEach(b=>b.onclick=()=>{ui.sbTeams=+b.dataset.n; $$('#sbTeams button').forEach(x=>x.classList.toggle('on',x===b));});
 $('#skMap').onclick=()=>openMapPicker(ui.skMap,i=>{ui.skMap=i; $('#skMap').textContent=mapLabel(i);});
 $('#sbMap').onclick=()=>openMapPicker(ui.sbMap,i=>{ui.sbMap=i; $('#sbMap').textContent=mapLabel(i);});
-$('#skGo').onclick=()=>startSkirmish(skirmCfg());
-$('#sbGo').onclick=()=>startSandbox();
+// show "loading map…" first, let the screen draw it, then build the (possibly big) map
+function withLoading(fn){ const m=$('#loadMsg'); m.classList.remove('hide'); requestAnimationFrame(()=>setTimeout(()=>{ try{ fn(); } finally{ m.classList.add('hide'); } },30)); }
+$('#skGo').onclick=()=>{ const c=skirmCfg(); withLoading(()=>startSkirmish(c)); };
+$('#sbGo').onclick=()=>withLoading(()=>startSandbox());
 function skinUnlocked(s){ if(s.boss) return save.max>s.boss*15; return totalStars()>=s.cost; }
 function buildSkins(){
   $('#skinInfo').innerHTML=T('skin_info',totalStars());
   $('#skinGrid').innerHTML=SKINS.map(s=>{const un=skinUnlocked(s), c=s.uni!=null?s.uni:TEAMS.blue.main, v=s.veh!=null?s.veh:TEAMS.blue.veh, hx=n=>'#'+n.toString(16).padStart(6,'0');
-    return `<div class="skin ${save.skin===s.id?'sel':''} ${un?'':'lock'}" data-s="${s.id}"><div class="sw"><i style="background:${hx(c)}${s.glow?';box-shadow:0 0 12px '+hx(c)+' inset':''}"></i><i style="background:${hx(v)}"></i><i style="background:${hx(TEAMS.blue.main)};flex:.35"></i></div><b>${skinN(s)}</b><br>${un?(save.skin===s.id?T('sel'):T('click_sel')):(s.boss?T('beat_boss',s.boss):`🔒 ${s.cost} ⭐`)}</div>`;}).join('');
+    return `<div class="skin ${save.skin===s.id?'sel':''} ${un?'':'lock'}" data-s="${s.id}"><div class="sw"><i style="background:${skinPreviewCSS(s,'uni')}"></i><i style="background:${skinPreviewCSS(s,'veh')}"></i><i style="background:${hx(TEAMS.blue.main)};flex:.35"></i></div><b>${skinN(s)}</b><br>${un?(save.skin===s.id?T('sel'):T('click_sel')):(s.boss?T('beat_boss',s.boss):`🔒 ${s.cost} ⭐`)}</div>`;}).join('');
   $$('#skinGrid .skin').forEach(e=>e.onclick=()=>{const s=SKINS.find(x=>x.id===e.dataset.s); if(!skinUnlocked(s)) return; save.skin=s.id; writeSave(); buildSkins();});
 }
 /* settings */
@@ -220,7 +230,8 @@ function enterHUD(){
   const vis=visibleDefs(); if(!vis.find(d=>d.id===ui.tool.id&&ui.tool.kind==='unit')){ const f=vis.find(d=>!isLocked(d)); ui.tool={kind:'unit',id:f?f.id:'rifle'}; }
   buildTabs(); refreshCards(); updateStartBtn(); rebuildGhost();
   $('#side').classList.toggle('hide',!ui.sideOpen);
-  $('#title').innerHTML=S.mode==='campaign'?T('ti_level',S.level.L,LEVELS)+(S.level.boss?' 👑':''):S.mode==='skirm'?T('ti_vs',S.teams.length-1):S.mode==='sandbox'?T('ti_sand'):T('ti_tut');
+  $('#title').innerHTML=S.mode==='campaign'?T('ti_level',S.level.L,LEVELS)+(S.level.boss?' 👑':''):S.mode==='skirm'?T('ti_vs',S.teams.length-1):S.mode==='sandbox'?T('ti_sand'):S.mode==='net'?'👥 '+Net.cfg.mode:T('ti_tut');
+  $('#speeds').classList.toggle('hide',S.mode==='net');
   $('#money').classList.toggle('hide',S.mode==='sandbox');
 }
 function buildSpeeds(){
@@ -228,7 +239,7 @@ function buildSpeeds(){
   $('#speeds').innerHTML=sp.map(s=>`<button data-s="${s}" class="${s===S.speed?'on':''}">×${s===.25?'¼':s===.5?'½':s}</button>`).join('');
   $$('#speeds button').forEach(b=>b.onclick=()=>{S.speed=+b.dataset.s; $$('#speeds button').forEach(x=>x.classList.toggle('on',x===b));});
 }
-function updateStartBtn(){const s=$('#startB'); if(S.phase==='setup'){s.textContent=T('start'); s.classList.remove('pause');} else if(S.phase==='over'){s.textContent=T('over'); s.classList.remove('pause');} else if(S.paused){s.textContent=T('resume'); s.classList.remove('pause');} else {s.textContent=T('pause'); s.classList.add('pause');}}
+function updateStartBtn(){const s=$('#startB'); if(S.mode==='net'&&S.phase!=='over'){ s.textContent=S.phase==='setup'?(Net.ready[Net.slot]?T('mp_ready_on'):T('mp_ready')):T('mp_battle'); s.classList.toggle('pause',S.phase==='setup'&&!!Net.ready[Net.slot]); return; } if(S.phase==='setup'){s.textContent=T('start'); s.classList.remove('pause');} else if(S.phase==='over'){s.textContent=T('over'); s.classList.remove('pause');} else if(S.paused){s.textContent=T('resume'); s.classList.remove('pause');} else {s.textContent=T('pause'); s.classList.add('pause');}}
 $('#startB').onclick=startToggle;
 $('#menuB').onclick=goMenu;
 $('#sndB').onclick=e=>{ e.stopPropagation(); initAudio(); const p=$('#volPop'); const open=p.classList.contains('hide');
@@ -239,11 +250,13 @@ $('#vpSfx').oninput=e=>{setVolume('sfxVol',+e.target.value); sfx('shot');};
 $('#vpMusic').oninput=e=>{ if(!save.music){save.music=true; $('#setMusic').checked=true; Music.mode=null;} setVolume('musicVol',+e.target.value); };
 $('#vpMute').onchange=e=>{ const m=e.target.checked; save.sound=!m; save.music=!m; $('#setSound').checked=!m; $('#setMusic').checked=!m; writeSave(); applySettings(); if(!m){Music.mode=null;} };
 document.addEventListener('pointerdown',e=>{ const p=$('#volPop'); if(!p.classList.contains('hide')&&!p.contains(e.target)&&e.target.id!=='sndB') p.classList.add('hide'); });
+$('#wxB').onclick=()=>{ if(S.mode==='sandbox'){ const i=WX_TYPES.indexOf(WX.type); setWeather(WX_TYPES[(i+1)%WX_TYPES.length]); } toast(T('weather')+': '+wxLabel(WX.type),2.5); };
 $('#musB').onclick=()=>{save.music=!save.music; $('#setMusic').checked=save.music; writeSave(); initAudio(); applySettings(); if(save.music){Music.mode=null; Music.play(S.phase==='battle'?'battle':'menu');}};
 $('#sideB').onclick=()=>{ui.sideOpen=!ui.sideOpen; $('#side').classList.toggle('hide',!ui.sideOpen);};
 
 function startToggle(){
   initAudio();
+  if(S.mode==='net'){ if(S.phase==='setup'){ if(!units.some(u=>u.alive&&u.owner===Net.slot)&&!Net.ready[Net.slot]&&Net.isHost()){ toast(T('t_need_units')); return; } netReadyToggle(); } return; }
   if(S.phase==='setup'){
     const me=S.player;
     if(me&&!units.some(u=>u.alive&&u.team===me)){toast(T('t_need_units')); return;}
@@ -260,41 +273,43 @@ function startToggle(){
 
 /* ---------- side panel ---------- */
 function buildSide(){
-  const sb=S.mode==='sandbox'; let h='';
+  const sb=S.mode==='sandbox'; let h=`<button class="b sdClose" id="sdClose">✕</button>`;
+  const op=document.body.classList.contains('mob')?'':' open', D=t=>`<details class="dsec"${op}><summary>${t}</summary>`, E='</details>';
   if(sb){
     h+=`<div class="sec">${T('sd_team')}</div><div class="seg2" id="sdTeam">${S.teams.map(t=>`<button data-t="${t}" class="${ui.team===t?'on':''}">${TEAMS[t].ic} ${teamN(t)}</button>`).join('')}</div>
       <div class="sec">${T('sd_skin')}</div><select class="b" id="sdSkin" style="width:100%">${SKINS.map(s=>`<option value="${s.id}" ${S.skins[ui.team]===s.id?'selected':''}>${skinN(s)}</option>`).join('')}</select>`;
   } else {
-    h+=`<div class="sec">${T('sd_how')}</div><div style="color:#b9c4d0;line-height:1.5">${T('sd_how_t',TEAMS[S.player].css,T('sd_noreinf'))}</div>`;
+    h+=`<div class="sec tips">${T('sd_how')}</div><div class="tips" style="color:#b9c4d0;line-height:1.5">${T('sd_how_t',TEAMS[S.player].css,T('sd_noreinf'))}</div>`;
   }
-  h+=`<div style="color:#c9d3de;font-size:12px;margin-top:8px;line-height:1.45">${T('sd_medic_tip')}<br>${T('sd_cmd_tip')}</div>`;
+  h+=`<div class="tips" style="color:#c9d3de;font-size:12px;margin-top:8px;line-height:1.45">${T('sd_medic_tip')}<br>${T('sd_cmd_tip')}</div>`;
   h+=`<div class="sec">${T('sd_brush')}</div><div class="seg2" id="sdBrush">${(sb?[1,5,10,25,50,100]:[1,3,5,10]).map(n=>`<button data-n="${n}" class="${ui.brush===n?'on':''}">${n}</button>`).join('')}</div>
     <div class="sec">${T('sd_tools')}</div><div class="grid" id="sdTools">
       <button class="ob" data-k="inspect"><span class="ic">🔍</span>${T('tl_inspect')}</button>
       <button class="ob" data-k="erase"><span class="ic">🧽</span>${sb?T('tl_erase'):T('tl_refund')}</button>
       ${sb?`<button class="ob" data-k="strike"><span class="ic">✈️</span>${T('tl_strike')}</button>`:''}</div>`;
   if(sb){
-    h+=`<div class="sec">${T('sd_obs')}</div><div class="grid" id="sdObs">${Object.keys(OBS).map(k=>`<button class="ob" data-o="${k}"><span class="ic">${OBS[k].ic}</span>${obsN(k)}</button>`).join('')}</div>
-      <div class="sec">${T('life')}</div><div class="grid" id="sdLife">${Object.keys(CRIT).map(k=>`<button class="ob" data-c="${k}"><span class="ic">${CRIT[k].ic}</span>${critN(k)}</button>`).join('')}</div>
-      <div class="sec">${T('sd_bots')}</div>
+    h+=`${D(T('sd_obs'))}<div class="grid" id="sdObs">${Object.keys(OBS).map(k=>`<button class="ob" data-o="${k}"><span class="ic">${OBS[k].ic}</span>${obsN(k)}</button>`).join('')}</div>${E}
+      ${D(T('life'))}<div class="grid" id="sdLife">${Object.keys(CRIT).map(k=>`<button class="ob" data-c="${k}"><span class="ic">${CRIT[k].ic}</span>${critN(k)}</button>`).join('')}</div>${E}
+      ${D(T('sd_bots'))}
       ${S.teams.map(t=>`<div class="botrow" data-t="${t}"><span>${TEAMS[t].ic}</span>
         <select class="bd">${Object.keys(DIFF).map(k=>`<option value="${k}" ${k==='normal'?'selected':''}>${diffN(k)}</option>`).join('')}</select>
         <select class="bb">${[500,1000,2000,5000,10000,20000,50000,100000].map(v=>`<option ${v===2000?'selected':''}>${v}</option>`).join('')}</select>
         <select class="be"><option value="all">${T('all_eras')}</option>${ERAS.map(e=>`<option value="${e.id}">${e.ic} ${eraN(e.id)}</option>`).join('')}</select>
         <button>🤖</button></div>`).join('')}
       <button class="b" id="sdAllBots" style="width:100%">${T('sd_allbots')}</button>
-      <div class="sec"></div><button class="b" id="sdDesign" style="width:100%">${T('sd_design')}</button>
-      <div class="sec">${T('sd_time')}</div>
+      <div class="sec"></div><button class="b" id="sdDesign" style="width:100%">${T('sd_design')}</button>${E}
+      ${D(T('sd_time'))}
       <div>${T('tod')}: <b id="sdTodV"></b></div><input type="range" id="sdTod" min="0" max="24" step="0.1" value="${S.tod}" style="width:100%">
       <div class="row" style="margin:4px 0">${T('cy')}: <select class="b" id="sdCycle"><option value="0">${T('cy_off')}</option><option value="0.05">${T('cy_slow')}</option><option value="0.25">${T('cy_norm')}</option><option value="1">${T('cy_fast')}</option></select></div>
-      <div style="color:#9fb0c3;font-size:12px">${T('sd_speed_note')}</div>
-      <div class="sec">${T('sd_opts')}</div>
+      <div class="tips" style="color:#9fb0c3;font-size:12px">${T('sd_speed_note')}</div>${E}
+      ${D(T('sd_opts'))}
       <label><input type="checkbox" id="sdFF" ${S.ff?'checked':''}> ${T('ff')}</label><br>
-      <div class="row"><button class="b" id="sdReset">${T('bn_reset')}</button><button class="b" id="sdClear">${T('sd_clear')}</button><button class="b" id="sdCorpse">${T('sd_corpse')}</button></div>`;
-  } else if(S.phase==='setup') h+=`<div class="row"><button class="b" id="sdRefund">${T('sd_refundall')}</button></div>`;
-  h+=`<div class="sec">${T('sd_view')} – ${T('bars')}</div><div class="seg2" id="sdBars">${['all','hurt','off'].map(k=>`<button data-b="${k}" class="${ui.bars===k?'on':''}">${T('bars_'+k)}</button>`).join('')}</div>
-    <div style="color:#9fb0c3;font-size:11.5px;margin-top:6px;line-height:1.45">${T('sp_rank')}</div>`;
+      <div class="row"><button class="b" id="sdReset">${T('bn_reset')}</button><button class="b" id="sdClear">${T('sd_clear')}</button><button class="b" id="sdCorpse">${T('sd_corpse')}</button></div>${E}`;
+  } else if(S.phase==='setup'&&S.mode!=='net') h+=`<div class="row"><button class="b" id="sdRefund">${T('sd_refundall')}</button></div>`;
+  h+=`${D(T('sd_view')+' – '+T('bars'))}<div class="seg2" id="sdBars">${['all','hurt','off'].map(k=>`<button data-b="${k}" class="${ui.bars===k?'on':''}">${T('bars_'+k)}</button>`).join('')}</div>
+    <div class="tips" style="color:#9fb0c3;font-size:11.5px;margin-top:6px;line-height:1.45">${T('sp_rank')}</div>${E}`;
   $('#side').innerHTML=h;
+  $('#sdClose').onclick=()=>{ ui.sideOpen=false; $('#side').classList.add('hide'); };
   $$('#sdTeam button').forEach(b=>b.onclick=()=>{ui.team=b.dataset.t; buildSide(); rebuildGhost();});
   if($('#sdSkin')) $('#sdSkin').onchange=e=>{S.skins[ui.team]=e.target.value; toast(T('t_skin'));};
   $$('#sdBrush button').forEach(b=>b.onclick=()=>{ui.brush=+b.dataset.n; $$('#sdBrush button').forEach(x=>x.classList.toggle('on',x===b)); rebuildGhost();});
@@ -425,7 +440,7 @@ const placeTeam=()=>S.mode==='sandbox'?ui.team:S.player;
 function placeOk(){
   if(!groundOk) return false; if(S.mode==='sandbox') return true;
   if(S.phase!=='setup') return false;
-  if(ui.tool.kind==='unit') return inZone(S.player,gp.x,gp.z)&&(S.money[S.player]||0)>=DEFS[ui.tool.id].cost;
+  if(ui.tool.kind==='unit') return (S.mode==='net'?inBox(laneBox(Net.slot,MP_MODES[Net.cfg.mode]/2),gp.x,gp.z):inZone(S.player,gp.x,gp.z))&&(S.money[S.player]||0)>=DEFS[ui.tool.id].cost;
   return true;
 }
 function applyTool(first){
@@ -439,10 +454,12 @@ function applyTool(first){
     if(!sb){
       if(S.phase!=='setup'){ if(first) toast(T('t_no_place')); return; }
       if(isLocked(d)){toast(T('t_locked',uName(d),d.unlock)); return;}
-      if(!inZone(team,gx,gz)){ if(first) toast(T('t_zone',teamN(team))); return; }
+      if(S.mode==='net'){ if(!inBox(laneBox(Net.slot,MP_MODES[Net.cfg.mode]/2),gx,gz)){ if(first) toast(T('mp_lane',netLaneName())); return; } }
+      else if(!inZone(team,gx,gz)){ if(first) toast(T('t_zone',teamN(team))); return; }
       n=Math.min(n,Math.floor((S.money[team]||0)/d.cost)); if(n<=0){ if(first) toast(T('t_money')); return; }
       if(d.commander&&!first) return;
     }
+    if(S.mode==='net'){ if(d.boss||d.custom) return; netPlaceLocal(d.id,gx,gz,n,false); lastStamp={x:gx,z:gz}; sfx('place'); return; }
     const out=placeGroup(d.id,team,gx,gz,n);
     if(!sb){ const Z=ZONES[team]; for(const u of out){u.x=clamp(u.x,Z.x0+.6,Z.x1-.6); u.z=clamp(u.z,Z.z0+.6,Z.z1-.6);} S.money[team]-=d.commander?(out.length?d.cost:0):out.length*d.cost; updateAfford(); }
     if(units.length>1500&&first) toast(T('t_many'));
@@ -457,6 +474,7 @@ function applyTool(first){
   } else if(ui.tool.kind==='erase'){
     if(!sb){
       if(S.phase!=='setup'){ if(first) toast(T('t_refund_only')); return; }
+      if(S.mode==='net'){ if(first) netPlaceLocal(null,gx,gz,0,true); return; }
       for(const u of units) if(u.alive&&u.team===S.player&&Math.hypot(u.x-gx,u.z-gz)<3+u.rad&&!u.guard){ S.money[S.player]+=u.def.cost; S.placed[S.player]-=u.def.cost; removeUnit(u); if(u.def.commander) for(const g of units) if(g.guard===u) removeUnit(g); }
       units=units.filter(u=>!u.removed); updateAfford(); return;
     }
@@ -539,7 +557,7 @@ function rebuildGhost(){
 /* ================= END OF BATTLE ================= */
 function aliveTeams(){ return S.teams.filter(t=>units.some(u=>u.alive&&u.team===t)); }
 function checkEnd(){
-  if(S.phase!=='battle') return;
+  if(S.phase!=='battle'||NETC) return;
   const alive=aliveTeams();
   if(S.mode==='sandbox'){
     if(alive.length<=1&&!ui.bannerClosed&&$('#banner').classList.contains('hide')){
@@ -550,6 +568,7 @@ function checkEnd(){
   }
   if(S.mode==='menu'){ if(alive.length<=1||ui.demoT>100){ S.phase='over'; pending.push({t:3,fn:()=>{if(S.mode==='menu') startDemo();}}); } return; }
   const me=S.player;
+  if(S.mode==='net'){ if(alive.length<=1){ S.winner=alive[0]||'none'; S.phase='over'; updateStartBtn(); showEnd(alive[0]===me); } return; }
   if(alive.length<=1||!alive.includes(me)){ S.phase='over'; updateStartBtn(); showEnd(alive.includes(me)&&alive.length===1); }
 }
 function showEnd(win){
@@ -575,6 +594,9 @@ function showEnd(win){
     const alive=aliveTeams(), w=alive[0];
     h+=`<div class="rw">${w?T('e_winner',TEAMS[w].css,teamPl(w)):T('e_none')}<br>${S.teams.map(t=>T('e_lost',TEAMS[t].ic,teamPl(t),stats[t].lost,fmt(stats[t].lostCost))).join('<br>')}${rev}</div>`;
     btns=`<button class="b go" id="eRetry">${T('e_again')}</button> <button class="b" id="eMenu">${T('e_menu')}</button>`;
+  } else if(S.mode==='net'){
+    h+=`<div class="rw">${T('mp_result',TEAMS[S.player].ic+' '+teamPl(S.player))}<br>${['blue','red'].map(t=>T('e_lost',TEAMS[t].ic,teamPl(t),stats[t].lost,fmt(stats[t].lostCost))).join('<br>')}</div>`;
+    btns=`<button class="b go" id="eNet">${T('mp_again')}</button> <button class="b" id="eMenu">${T('e_menu')}</button>`;
   } else if(S.mode==='tutorial'){
     S.tutorial=null; showTut();
     h+=`<div class="rw">${win?T('e_tut_win'):T('e_tut_lose')}</div>`;
@@ -586,6 +608,7 @@ function showEnd(win){
   on('eRetry',()=>{ if(S.mode==='campaign') startCampaign(S.level.L); else if(S.mode==='skirm') startSkirmish(S.cfg); else startTutorial(); });
   on('eLv',()=>{ $('#end').classList.add('hide'); startDemo(); showMenu('mCampaign'); });
   on('eMenu',goMenu);
+  on('eNet',()=>{ const m=Net.cfg?Net.cfg.mode:'1v1'; goMenu(); showMenu('mMulti'); ui.mpMode=m; $$('#mpMode button').forEach(x=>x.classList.toggle('on',x.dataset.m===m)); mpSearch(m); });
 }
 
 /* ================= MAIN LOOP ================= */
@@ -604,7 +627,7 @@ function frame(now){
     if(keys.KeyQ) cam.theta+=1.6*rdt; if(keys.KeyE) cam.theta-=1.6*rdt;
   }
   if(!S.paused){ let sdt=rdt*S.speed; while(sdt>1e-5){ const d=Math.min(sdt,.034); step(d); sdt-=d; } if(S.todSpeed) applyTOD(); }
-  updateSnow(rdt);
+  updateSnow(rdt); wxFrame();
   const tt=performance.now()/1000;
   for(const u of units){
     u.g.position.set(u.x,u.y+(u.hover?.35+Math.sin(tt*2+u.id)*.12:0),u.z); u.g.rotation.y=u.rot;
@@ -642,7 +665,7 @@ function hudTick(){
   while(S.events.length){ const e=S.events.shift(); if(e.type==='cmdDown') toast(T('t_cmd_down',TEAMS[e.team].ic,teamPl(e.team)),3.5); else if(e.type==='plan'&&(e.team===S.player||S.mode==='sandbox')&&S.phase==='battle') toast(TEAMS[e.team].ic+' '+T('plan_'+e.plan)+(e.spread?' · '+T('plan_spread'):''),3.5); else if((e.type==='breach'||e.type==='breachDone')&&(e.team===S.player||S.mode==='sandbox')&&S.phase==='battle') toast(TEAMS[e.team].ic+' '+(e.type==='breach'?T('plan_breach',DEFS[e.k]?DEFS[e.k].ic+' '+uName(DEFS[e.k]):e.name):T('plan_breached')),4); else if(e.type==='oneCmd'&&(S.mode==='sandbox'||e.team===S.player)) toast(T('t_one_cmd')); }
   const counts={}; for(const t of S.teams) counts[t]=0; for(const u of units) if(u.alive&&counts[u.team]!=null) counts[u.team]++;
   $('#chips').innerHTML=S.teams.map(t=>`<span class="chip" style="color:${TEAMS[t].css}" title="${CMD.team[t]&&CMD.team[t].cmd?T('cmd_on')+' – '+T('plan_'+(CMD.team[t].plan||'attack')):T('cmd_off')}">${TEAMS[t].ic} ${counts[t]}${CMD.team[t]&&CMD.team[t].cmd?' 🎖️':''}</span>`).join('');
-  if(S.mode!=='sandbox') $('#money').innerHTML=`💰 ${fmt(S.money[S.player]||0)}${S.income?` <span style="font-weight:400;font-size:11px;color:#c9b77a">(+${S.income}/10s)</span>`:''}`;
+  if(S.mode!=='sandbox') $('#money').innerHTML=(S.mode==='net'?`<span style="font-weight:600;color:#cfe">${netHud()}</span> · `:'')+`💰 ${fmt(S.money[S.player]||0)}${S.income?` <span style="font-weight:400;font-size:11px;color:#c9b77a">(+${S.income}/10s)</span>`:''}`;
   updateAfford();
   const h=((S.tod%24)+24)%24, hh=Math.floor(h), mm=Math.floor((h-hh)*60);
   $('#todL').textContent=`${h>=6.3&&h<18.7?'☀️':'🌙'} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
